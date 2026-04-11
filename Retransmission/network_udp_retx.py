@@ -26,6 +26,7 @@ ACK_SIZE_BASE = struct.calcsize(ACK_FMT_BASE)
 
 
 def send_ack(send_sock, addr, bunch_id, missing_packets):
+    
     ack_fmt = "I I " + "I"*len(missing_packets)  # bunch_id | num_missing | missing_packet_ids...
     ack_packet = struct.pack(ack_fmt, bunch_id, len(missing_packets), *missing_packets)
     print(f"Sending ACK for bunch {bunch_id}. Missing packets: {missing_packets}")
@@ -43,6 +44,10 @@ def receive_ack(recv_sock):
                 missing_packet_ids = struct.unpack("I"*num_missing, ack_packet[1+ACK_SIZE_BASE: 1+ACK_SIZE_BASE+4*num_missing])
                 print(f"ACK received for bunch {ack_bunch_id}. Missing packets: {missing_packet_ids}")
                 return ack_bunch_id, num_missing, missing_packet_ids
+
+            elif ack_packet[0:1] == b"R":  # Special marker for control packet retransmission request
+                print("Control packet retransmission ACK received from receiver")
+                return None, -2, []  # Special return value to indicate control packet retransmission request
             # else:
             #     print("Received non-ACK packet while waiting for ACK. Ignoring...")
                 # return None, None, None
@@ -98,19 +103,16 @@ def send_data(send_sock, payload, dest_addr_tuple, recv_sock):
             # if num_missing != len(missing_packet_ids):
             #     print("Warning: ACK inconsistency detected!")
 
-            if not missing_packet_ids and num_missing == -2:
+            # Special case for control packet retransmission request
+            if not missing_packet_ids and num_missing == -2 and ack_bunch_id is None:  
                 print("Control packet retransmission requested by receiver, resending control packet...")
                 control_packet = struct.pack(CONTROL_FMT, total_packets, BUNCH_SIZE, send_start_time)
                 send_sock.sendto(b"C" + control_packet, dest_addr_tuple)  # "C" = control packet marker
                 continue  # After retransmitting the control packet, wait for ACKs again
 
-            if not missing_packet_ids and num_missing == 0:
-                print(f"All pkts for Bunch ID: {ack_bunch_id} acknowledged, moving to next bunch...")
-                break
-
             # ACK timeout or error case, we can choose to retransmit the whole bunch or just wait again for ACKs. 
             # Here we choose to retransmit the whole bunch for simplicity.
-            if not missing_packet_ids and num_missing == -1:
+            elif not missing_packet_ids and num_missing == -1 and ack_bunch_id == None:
                 print(f"All pkts for Bunch ID: {BUNCH_ID} assumed lost due to ACK timeout, retransmitting whole bunch...")
                 for packet_id in range(bunch_start,bunch_end):
 
@@ -123,6 +125,12 @@ def send_data(send_sock, payload, dest_addr_tuple, recv_sock):
                     print(f"Retransmitted pkt id: {packet_id}")
 
                 continue  # After retransmitting the whole bunch, wait for ACKs again
+
+
+            # If we receive an ACK for the current bunch with no missing packets, we can move on to the next bunch
+            elif not missing_packet_ids and num_missing == 0:
+                print(f"All pkts for Bunch ID: {ack_bunch_id} acknowledged, moving to next bunch...")
+                break
 
             else:
                 print(f"Retransmitting {num_missing} missing pkts for Bunch ID: {BUNCH_ID}...")
@@ -197,14 +205,14 @@ def receive_data(recv_sock, send_sock, DEST_PORT):
                             missing = expected_packet_ids - set(bunch_buffer[bunch_id].keys()) 
                             print(f"Sending ACK for bunch {bunch_id}. Missing packets: {missing}")
                             send_ack(send_sock, (sender_addr_tuple[0], DEST_PORT), bunch_id, list(missing))
-                            acked_bunches.add(bunch_id)  # Mark this bunch as ACKed to avoid duplicate ACKs
-                            print(f"bunch buffer for bunch {bunch_id}: {bunch_buffer[bunch_id].keys()}")
 
-                            if len(missing) == 0 and not missing and bunch_id in acked_bunches:
+                            if len(missing) == 0 and not missing:
                                 packets.update(bunch_buffer[bunch_id])      # Move received packets from bunch buffer to main packets dictionary
                                 del bunch_buffer[bunch_id]                  # Clear buffer for this bunch after all pkts received and ACK sent
-                                acked_bunches.discard(bunch_id)              # Remove from ACKed set to allow for potential future ACKs if needed
+                                acked_bunches.add(bunch_id)                 # Mark this bunch as ACKed to avoid duplicate ACKs for the same bunch
                                 print("========================================")
+                            else:
+                                print(f"Bunch {bunch_id} incomplete. Waiting for retransmission of: {missing}")
                         
                         if len(packets) == total_packets:
                             print("All packets received, exiting reception loop.")
@@ -215,7 +223,7 @@ def receive_data(recv_sock, send_sock, DEST_PORT):
                         # Send ACK to retransmit the control packet
                         if sender_addr_tuple:
                             print("Requesting retransmission of control packet...")
-                            send_ack(send_sock, (sender_addr_tuple[0], DEST_PORT), -2, [0])  # Using bunch_id=0 and missing_packet_id=0 to indicate control packet retransmission request
+                            send_sock.sendto(b"R", (sender_addr_tuple[0], DEST_PORT))  # "R" = Retransmission packet marker for control packet
                 
                 else:
                     print("Unknown packet type received. Ignoring...")

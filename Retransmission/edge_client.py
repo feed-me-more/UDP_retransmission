@@ -12,7 +12,7 @@ from network_udp_retx import send_data
 LOCAL_RECV_PORT = 5005        # Receiving PORT
 LOCAL_SEND_PORT = 5006        # Sending PORT
 DEST_PORT = 5006			  # Receiver's PORT
-dest_addr = "192.168.0.157"  # Receiver's IP address
+dest_addr = "192.168.0.157"  # Receiver's IP address (laptop)
 
 
 # SERVER_IP = "192.168.0.157" # "10.53.6.127"
