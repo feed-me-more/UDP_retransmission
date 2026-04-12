@@ -1,5 +1,3 @@
-# server/server_node.py
-
 import socket
 import time
 
@@ -9,8 +7,8 @@ from network_udp_retx import receive_data
 LOCAL_RECV_PORT = 5006            # Receiving port
 LOCAL_SEND_PORT = 5005            # Sending port
 DEST_PORT = 5005                  # Receiver's port
-dest_addr = "192.168.0.163"       # Receiver's IP address
-# send_addr = "192.168.0.157"     # Sender's IP address
+dest_addr = "192.168.0.163"       # Sender's IP address (R-pi)
+# send_addr = "192.168.0.157"     # Receiver's IP address (laptop)
 
 def main():
 
@@ -24,42 +22,54 @@ def main():
 
     print("Server ready")
     print("Press Ctrl+C to stop the server\n")
+    print("Waiting for file...")
 
     try:
         while True: 
 
-            print("Waiting for activation...")
+            msg_encoded, sender_addr_tuple = recv_sock.recvfrom(1024)
+            msg = msg_encoded.decode()
 
-            while True:
-                result = receive_data(recv_sock, send_sock, DEST_PORT)
+            if not msg.startswith("FILE_START:"):
+                print(f"Received unexpected message: {msg}")
+                continue
 
-                if result is not None:
-                    data, sender_addr_tuple, T_comm, T_latency = result
-                    break
-                    
-            print("File received")
+            total_chunks = int(msg.split(":")[1])
+            print(f"Handshake received: {msg}")
+            print(f"Expecting {total_chunks} chunks\n")
 
-            with open("received_video.mp4", "wb") as file:
-                file.write(data)
+            T_comm_total = 0.0
+            T_latency_total = 0.0
 
-            # activation = deserialize_tensor(data)
+            for chunk_id in range(total_chunks):
+                print(f"Waiting for chunk {chunk_id + 1}/{total_chunks}...")
 
-            # t0 = time.perf_counter()
+                result = None
 
-            # out = split.server_forward(activation)
+            # while True:
+            #     result = receive_data(recv_sock, send_sock, DEST_PORT)
 
-            # t1 = time.perf_counter()
+                while result is None:
+                    result = receive_data(recv_sock, send_sock, DEST_PORT)
 
-            # T_server = t1 - t0
+                data, sender_addr_tuple, T_comm, T_latency = result
 
-            msg = f"{T_comm},{T_latency}"
+                T_comm_total += T_comm
+                T_latency_total += T_latency
+
+                mode = "wb" if chunk_id == 0 else "ab"
+
+                with open("received_video.mp4", mode) as file:
+                    file.write(data)
+
+            msg = f"{T_comm_total},{T_latency_total}"
 
             print("Sending results back")
 
             send_sock.sendto(msg.encode(), (sender_addr_tuple[0], DEST_PORT))
 
             print("Done\n")
-    
+
     except KeyboardInterrupt:
         print("\n\nServer shutting down...")
         send_sock.close()

@@ -192,7 +192,7 @@ def receive_data(recv_sock, send_sock, DEST_PORT):
                             bunch_buffer[bunch_id] = {}         # Initialize buffer for this bunch
 
                         bunch_buffer[bunch_id][packet_id] = data
-                        print(f"Packet ID {packet_id} stored in bunch buffer for bunch {bunch_id}. Current buffer keys: {bunch_buffer[bunch_id].keys()}")
+                        # print(f"Packet ID {packet_id} stored in bunch buffer for bunch {bunch_id}. Current buffer keys: {bunch_buffer[bunch_id].keys()}")
 
                         is_full_bunch = len(bunch_buffer[bunch_id]) == recv_bunch_size
                         is_last_packet = packet_id == (total_packets - 1)
@@ -234,12 +234,12 @@ def receive_data(recv_sock, send_sock, DEST_PORT):
             print(f"First packet timestamp: {t_first:.6f} seconds")
             print(f"First packet received at: {t_first_recv:.6f} seconds")
 
-            T_latency = (t_first_recv - t_first) * 1000.000
+            T_latency = (t_first_recv - t_first) * 1000
             print(f"Latency from first packet sent to first packet received: {T_latency:.6f} ms")
             
             t_last = time.perf_counter()
 
-            T_comm = (t_last - t_first_precise) * 1000.000
+            T_comm = (t_last - t_first_precise) * 1000
 
             print(f"All pkts received in {T_comm:.6f} ms")
 
